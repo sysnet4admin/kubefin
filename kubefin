@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
 # kubefin(1) is a utility to finalize namespace and others
-# main source: https://medium.com/pareture/script-to-force-remove-kubernetes-namespace-finalizer-57b72bd9460d
+# main source: 
+# - https://medium.com/pareture/script-to-force-remove-kubernetes-namespace-finalizer-57b72bd9460d
+# - https://kubernetes.io/blog/2021/05/14/using-finalizers-to-control-deletion/
 
 # Copyright 2022 SysNet4Admin (Hoon Jo)
 #
@@ -21,6 +23,14 @@
 set -eou pipefail
 #IFS=$'\n\t'
 
+check_prerequirements(){
+  if yum list installed "jq" >/dev/null 2>&1; then
+    true
+  else
+    yum install jq -y
+  fi
+}
+
 
 finalize_namespace() {
   namespace=$1
@@ -29,12 +39,13 @@ finalize_namespace() {
     echo "This script requires a namespace argument input. None found. Exiting."
     exit 1
   fi
-  kubectl get namespace $namespace -o json | jq '.spec = {"finalizers":[]}' > /tmp/finalize_tmp.json
-  kubectl proxy &
+  kubectl get namespace $namespace -o json | jq '.spec = {"finalizers":[]}' > finalize_tmp.json
+  kubectl proxy --port=8888 &
   sleep 5
-  curl -H "Content-Type: application/json" -X PUT --data-binary /tmp/finalize_tmp.json http://localhost:8001/api/v1/namespaces/$namespace/finalize
+  curl -H "Content-Type: application/json" -X PUT --data-binary @finalize_tmp.json http://localhost:8888/api/v1/namespaces/$namespace/finalize
+  curl -X PUT localhost:8888/api/v1/namespaces/@namespace/finalize -H "Content-Type: application/json" --data-binary @finalize_tmp.json 
   pkill -9 -f "kubectl proxy"
-  rm /tmp/finalize_tmp.json
+  rm finalize_tmp.json
 }
 
 clear_user() {
